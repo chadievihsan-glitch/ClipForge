@@ -7,12 +7,11 @@ const app = express();
 
 const PORT = process.env.PORT || 10000;
 
-const BACKEND_URL =
-  "https://clipforge-we2q.onrender.com";
+const BACKEND_URL = "https://clipforge-we2q.onrender.com";
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
-  "https://clipforge-we2q.onrender.com";
+  "https://codepen.io/Ihsan-Chadiev/debug/dPGXZyM";
 
 const REDIRECT_URI =
   `${BACKEND_URL}/auth/youtube/callback`;
@@ -28,7 +27,10 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin: [
+      "https://codepen.io",
+      "https://cdpn.io"
+    ],
     credentials: true
   })
 );
@@ -40,9 +42,7 @@ app.use(
 
 app.use(
   session({
-    secret:
-      process.env.SESSION_SECRET ||
-      "CHANGE_THIS_SESSION_SECRET",
+    secret: process.env.SESSION_SECRET,
 
     resave: false,
 
@@ -51,9 +51,8 @@ app.use(
     cookie: {
       secure: true,
       httpOnly: true,
-      sameSite: "lax",
-      maxAge:
-        7 * 24 * 60 * 60 * 1000
+      sameSite: "none",
+      maxAge: 7 * 24 * 60 * 60 * 1000
     }
   })
 );
@@ -71,24 +70,17 @@ function createOAuthClient() {
   const clientSecret =
     process.env.GOOGLE_CLIENT_SECRET;
 
-
   if (!clientId) {
-
     throw new Error(
       "GOOGLE_CLIENT_ID ontbreekt op Render."
     );
-
   }
 
-
   if (!clientSecret) {
-
     throw new Error(
       "GOOGLE_CLIENT_SECRET ontbreekt op Render."
     );
-
   }
-
 
   return new google.auth.OAuth2(
     clientId,
@@ -105,83 +97,62 @@ function createOAuthClient() {
 app.get("/", (req, res) => {
 
   res.json({
-
     success: true,
-
     backend: "online",
-
     youtube: "ready",
-
     ffmpeg: true,
-
-    message:
-      "ClipForge backend werkt!"
-
+    message: "ClipForge backend werkt!"
   });
 
 });
 
 
 /* =========================
-   YOUTUBE CONNECT
+   CONNECT YOUTUBE
 ========================= */
 
-app.get(
-  "/auth/youtube",
-  (req, res) => {
+app.get("/auth/youtube", (req, res) => {
 
-    try {
+  try {
 
-      const oauth =
-        createOAuthClient();
+    const oauth =
+      createOAuthClient();
 
+    const authUrl =
+      oauth.generateAuthUrl({
 
-      const authUrl =
-        oauth.generateAuthUrl({
+        access_type: "offline",
 
-          access_type: "offline",
+        prompt: "consent",
 
-          prompt: "consent",
-
-          scope: [
-
-            "https://www.googleapis.com/auth/youtube.upload",
-
-            "https://www.googleapis.com/auth/youtube.readonly"
-
-          ]
-
-        });
-
-
-      res.redirect(authUrl);
-
-
-    } catch (error) {
-
-      console.error(
-        "YouTube OAuth error:",
-        error
-      );
-
-
-      res.status(500).json({
-
-        success: false,
-
-        error:
-          error.message
+        scope: [
+          "https://www.googleapis.com/auth/youtube.upload",
+          "https://www.googleapis.com/auth/youtube.readonly"
+        ]
 
       });
 
-    }
+    res.redirect(authUrl);
+
+  } catch (error) {
+
+    console.error(
+      "YouTube OAuth error:",
+      error
+    );
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
 
   }
-);
+
+});
 
 
 /* =========================
-   YOUTUBE CALLBACK
+   CALLBACK
 ========================= */
 
 app.get(
@@ -193,7 +164,6 @@ app.get(
       const code =
         req.query.code;
 
-
       if (!code) {
 
         return res
@@ -204,52 +174,31 @@ app.get(
 
       }
 
-
       const oauth =
         createOAuthClient();
-
 
       const result =
         await oauth.getToken(code);
 
-
       const tokens =
         result.tokens;
 
-
-      oauth.setCredentials(
-        tokens
-      );
-
+      oauth.setCredentials(tokens);
 
       const youtube =
         google.youtube({
-
           version: "v3",
-
           auth: oauth
-
         });
-
-
-      /*
-        Haal het kanaal van de
-        ingelogde gebruiker op.
-      */
 
       const response =
         await youtube.channels.list({
-
           part: "snippet",
-
           mine: true
-
         });
-
 
       const channel =
         response.data.items?.[0];
-
 
       if (!channel) {
 
@@ -262,11 +211,11 @@ app.get(
       }
 
 
+      /* SAVE SESSION */
+
       req.session.youtube = {
 
         connected: true,
-
-        tokens: tokens,
 
         channel: {
 
@@ -288,14 +237,45 @@ app.get(
       };
 
 
-      req.session.save(() => {
+      /*
+        BELANGRIJK:
+        We bewaren de OAuth tokens
+        alleen in de server session.
+      */
 
-        res.redirect(
-          `${FRONTEND_URL}/?youtube=connected`
-        );
+      req.session.youtube.tokens =
+        tokens;
 
-      });
 
+      req.session.save(
+        (sessionError) => {
+
+          if (sessionError) {
+
+            console.error(
+              "Session save error:",
+              sessionError
+            );
+
+            return res
+              .status(500)
+              .send(
+                "Session opslaan mislukt."
+              );
+
+          }
+
+
+          /*
+            Terug naar CodePen.
+          */
+
+          res.redirect(
+            `${FRONTEND_URL}/?youtube=connected`
+          );
+
+        }
+      );
 
     } catch (error) {
 
@@ -303,7 +283,6 @@ app.get(
         "YouTube callback error:",
         error
       );
-
 
       res
         .status(500)
@@ -329,7 +308,6 @@ app.get(
     const youtube =
       req.session.youtube;
 
-
     if (
       youtube &&
       youtube.connected
@@ -345,7 +323,6 @@ app.get(
       });
 
     }
-
 
     res.json({
 
@@ -365,9 +342,7 @@ app.post(
   "/api/youtube/disconnect",
   (req, res) => {
 
-    req.session.youtube =
-      null;
-
+    req.session.youtube = null;
 
     req.session.save(() => {
 

@@ -1,14 +1,14 @@
 {
   "name": "clipforge",
-  "version": "2.0.0",
-  "description": "ClipForge video clipping app",
+  "version": "1.0.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^5.1.0",
-    "multer": "^2.0.2"
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-session": "^1.18.1",
+    "googleapis": "^144.0.0"
   }
 }

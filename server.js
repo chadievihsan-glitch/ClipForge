@@ -1,413 +1,1166 @@
-const express = require("express");
-const cors = require("cors");
-const session = require("express-session");
-const { google } = require("googleapis");
+const BACKEND_URL =
+  "https://clipforge-we2q.onrender.com";
 
-const app = express();
+let authMode = "login";
 
-const PORT = process.env.PORT || 10000;
+let selectedPlan = {
+  name: "",
+  price: 0
+};
 
-const BACKEND_URL = "https://clipforge-we2q.onrender.com";
-
-const FRONTEND_URL =
-  process.env.FRONTEND_URL ||
-  "https://codepen.io/Ihsan-Chadiev/debug/dPGXZyM";
-
-const REDIRECT_URI =
-  `${BACKEND_URL}/auth/youtube/callback`;
+let selectedPayment = "card";
 
 
 /* =========================
-   MIDDLEWARE
+   HELPERS
 ========================= */
 
-app.set("trust proxy", 1);
-
-app.use(express.json());
-
-app.use(
-  cors({
-    origin: [
-      "https://codepen.io",
-      "https://cdpn.io"
-    ],
-    credentials: true
-  })
-);
+function $(id) {
+  return document.getElementById(id);
+}
 
 
-/* =========================
-   SESSION
-========================= */
+function showToast(message) {
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET,
+  const toast = $("toast");
 
-    resave: false,
+  if (!toast) return;
 
-    saveUninitialized: false,
+  toast.textContent = message;
 
-    cookie: {
-      secure: true,
-      httpOnly: true,
-      sameSite: "none",
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    }
-  })
-);
+  toast.classList.add("show");
+
+  setTimeout(() => {
+    toast.classList.remove("show");
+  }, 3000);
+}
 
 
-/* =========================
-   GOOGLE OAUTH
-========================= */
+function getUser() {
 
-function createOAuthClient() {
+  const saved =
+    localStorage.getItem("clipforgeUser");
 
-  const clientId =
-    process.env.GOOGLE_CLIENT_ID;
-
-  const clientSecret =
-    process.env.GOOGLE_CLIENT_SECRET;
-
-  if (!clientId) {
-    throw new Error(
-      "GOOGLE_CLIENT_ID ontbreekt op Render."
-    );
+  if (!saved) {
+    return null;
   }
 
-  if (!clientSecret) {
-    throw new Error(
-      "GOOGLE_CLIENT_SECRET ontbreekt op Render."
-    );
+  try {
+    return JSON.parse(saved);
+  } catch {
+    return null;
   }
+}
 
-  return new google.auth.OAuth2(
-    clientId,
-    clientSecret,
-    REDIRECT_URI
+
+function saveUser(user) {
+
+  localStorage.setItem(
+    "clipforgeUser",
+    JSON.stringify(user)
   );
 }
 
 
 /* =========================
-   HOME
+   YOUTUBE
 ========================= */
 
-app.get("/", (req, res) => {
+function connectYouTube() {
 
-  res.json({
-    success: true,
-    backend: "online",
-    youtube: "ready",
-    ffmpeg: true,
-    message: "ClipForge backend werkt!"
-  });
+  window.open(
+    `${BACKEND_URL}/auth/youtube`,
+    "_blank",
+    "noopener,noreferrer"
+  );
 
-});
+}
 
 
-/* =========================
-   CONNECT YOUTUBE
-========================= */
+async function checkYouTubeStatus() {
 
-app.get("/auth/youtube", (req, res) => {
+  const button =
+    $("youtubeButton");
+
+  if (!button) {
+    return;
+  }
 
   try {
 
-    const oauth =
-      createOAuthClient();
+    const response =
+      await fetch(
+        `${BACKEND_URL}/api/youtube/status`,
+        {
+          method: "GET",
+          credentials: "include"
+        }
+      );
 
-    const authUrl =
-      oauth.generateAuthUrl({
 
-        access_type: "offline",
+    if (!response.ok) {
+      throw new Error(
+        "YouTube status kon niet worden opgehaald."
+      );
+    }
 
-        prompt: "consent",
 
-        scope: [
-          "https://www.googleapis.com/auth/youtube.upload",
-          "https://www.googleapis.com/auth/youtube.readonly"
-        ]
+    const data =
+      await response.json();
 
-      });
 
-    res.redirect(authUrl);
+    if (
+      data.connected &&
+      data.channel
+    ) {
+
+      button.textContent =
+        `✓ ${data.channel.title}`;
+
+      button.classList.add(
+        "youtube-connected"
+      );
+
+      button.title =
+        "YouTube connected";
+
+    } else {
+
+      button.textContent =
+        "▶ Connect YouTube";
+
+      button.classList.remove(
+        "youtube-connected"
+      );
+
+      button.title =
+        "Connect your YouTube channel";
+
+    }
 
   } catch (error) {
 
     console.error(
-      "YouTube OAuth error:",
+      "YouTube status error:",
       error
     );
 
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-
   }
 
-});
+}
 
 
 /* =========================
-   CALLBACK
+   YOUTUBE DISCONNECT
 ========================= */
 
-app.get(
-  "/auth/youtube/callback",
-  async (req, res) => {
+async function disconnectYouTube() {
 
-    try {
+  try {
 
-      const code =
-        req.query.code;
-
-      if (!code) {
-
-        return res
-          .status(400)
-          .send(
-            "Geen Google authorization code."
-          );
-
-      }
-
-      const oauth =
-        createOAuthClient();
-
-      const result =
-        await oauth.getToken(code);
-
-      const tokens =
-        result.tokens;
-
-      oauth.setCredentials(tokens);
-
-      const youtube =
-        google.youtube({
-          version: "v3",
-          auth: oauth
-        });
-
-      const response =
-        await youtube.channels.list({
-          part: "snippet",
-          mine: true
-        });
-
-      const channel =
-        response.data.items?.[0];
-
-      if (!channel) {
-
-        return res
-          .status(400)
-          .send(
-            "Geen YouTube-kanaal gevonden."
-          );
-
-      }
-
-
-      /* SAVE SESSION */
-
-      req.session.youtube = {
-
-        connected: true,
-
-        channel: {
-
-          id:
-            channel.id,
-
-          title:
-            channel.snippet?.title ||
-            "YouTube Channel",
-
-          thumbnail:
-            channel.snippet
-              ?.thumbnails
-              ?.default
-              ?.url || ""
-
-        }
-
-      };
-
-
-      /*
-        BELANGRIJK:
-        We bewaren de OAuth tokens
-        alleen in de server session.
-      */
-
-      req.session.youtube.tokens =
-        tokens;
-
-
-      req.session.save(
-        (sessionError) => {
-
-          if (sessionError) {
-
-            console.error(
-              "Session save error:",
-              sessionError
-            );
-
-            return res
-              .status(500)
-              .send(
-                "Session opslaan mislukt."
-              );
-
-          }
-
-
-          /*
-            Terug naar CodePen.
-          */
-
-          res.redirect(
-            `${FRONTEND_URL}/?youtube=connected`
-          );
-
+    const response =
+      await fetch(
+        `${BACKEND_URL}/api/youtube/disconnect`,
+        {
+          method: "POST",
+          credentials: "include"
         }
       );
 
-    } catch (error) {
 
-      console.error(
-        "YouTube callback error:",
-        error
+    const data =
+      await response.json();
+
+
+    if (!data.success) {
+
+      throw new Error(
+        "YouTube disconnect mislukt."
       );
-
-      res
-        .status(500)
-        .send(
-          "YouTube verbinden mislukt: " +
-          error.message
-        );
 
     }
 
+
+    showToast(
+      "👋 YouTube disconnected."
+    );
+
+
+    checkYouTubeStatus();
+
+
+  } catch (error) {
+
+    console.error(error);
+
+    showToast(
+      "❌ YouTube disconnect mislukt."
+    );
+
   }
-);
+
+}
 
 
 /* =========================
-   YOUTUBE STATUS
+   YOUTUBE CALLBACK
 ========================= */
 
-app.get(
-  "/api/youtube/status",
-  (req, res) => {
+function checkYouTubeCallback() {
 
-    const youtube =
-      req.session.youtube;
+  const params =
+    new URLSearchParams(
+      window.location.search
+    );
+
+
+  if (
+    params.get("youtube") ===
+    "connected"
+  ) {
+
+    showToast(
+      "✅ YouTube succesvol verbonden!"
+    );
+
+
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.pathname
+    );
+
+
+    setTimeout(() => {
+
+      checkYouTubeStatus();
+
+    }, 500);
+
+  }
+
+}
+
+
+/* =========================
+   LOGIN
+========================= */
+
+function openLogin() {
+
+  $("loginModal")
+    .classList.remove("hidden");
+}
+
+
+function switchAuth() {
+
+  authMode =
+    authMode === "login"
+      ? "register"
+      : "login";
+
+  const register =
+    authMode === "register";
+
+
+  $("authTitle").textContent =
+    register
+      ? "Create account"
+      : "Welcome back";
+
+
+  $("authDescription").textContent =
+    register
+      ? "Create your ClipForge account."
+      : "Log in to your ClipForge account.";
+
+
+  $("authName")
+    .classList.toggle(
+      "hidden",
+      !register
+    );
+
+
+  $("authButtonText").textContent =
+    register
+      ? "Create account"
+      : "Log in";
+
+
+  $("switchAuthButton").textContent =
+    register
+      ? "Already have an account? Log in"
+      : "Don't have an account? Create one";
+
+}
+
+
+function submitAuth() {
+
+  const name =
+    $("authName").value.trim();
+
+  const email =
+    $("authEmail").value.trim();
+
+  const password =
+    $("authPassword").value.trim();
+
+
+  if (!email || !password) {
+
+    showToast(
+      "❌ Fill in your email and password."
+    );
+
+    return;
+  }
+
+
+  if (
+    authMode === "register" &&
+    !name
+  ) {
+
+    showToast(
+      "❌ Enter your name."
+    );
+
+    return;
+  }
+
+
+  let user =
+    getUser();
+
+
+  if (authMode === "register") {
+
+    user = {
+
+      name: name,
+
+      email: email,
+
+      password: password,
+
+      plan: "Basic",
+
+      videos: 0,
+
+      clips: 0,
+
+      uploads: 0
+
+    };
+
+  } else {
+
+    if (!user) {
+
+      showToast(
+        "❌ No account found. Create one first."
+      );
+
+      return;
+    }
+
 
     if (
-      youtube &&
-      youtube.connected
+      user.email !== email ||
+      user.password !== password
     ) {
 
-      return res.json({
+      showToast(
+        "❌ Incorrect email or password."
+      );
 
-        connected: true,
+      return;
+    }
 
-        channel:
-          youtube.channel
+  }
 
-      });
+
+  saveUser(user);
+
+  updateUser();
+
+  closeModal("loginModal");
+
+  showToast(
+    `✅ Welcome ${user.name}!`
+  );
+
+}
+
+
+/* =========================
+   USER / PROFILE
+========================= */
+
+function updateUser() {
+
+  const user =
+    getUser();
+
+
+  if (!user) {
+
+    $("loginButton")
+      .classList.remove("hidden");
+
+    $("profileButton")
+      .classList.add("hidden");
+
+    return;
+  }
+
+
+  $("loginButton")
+    .classList.add("hidden");
+
+  $("profileButton")
+    .classList.remove("hidden");
+
+
+  $("navName").textContent =
+    `${user.name} • ${user.plan}`;
+
+
+  $("profileName").textContent =
+    user.name;
+
+  $("profileEmail").textContent =
+    user.email;
+
+  $("profilePlan").textContent =
+    user.plan;
+
+  $("profileVideos").textContent =
+    user.videos || 0;
+
+  $("profileClips").textContent =
+    user.clips || 0;
+
+  $("profileUploads").textContent =
+    user.uploads || 0;
+
+
+  if (user.plan === "Pro") {
+
+    $("profileQuality").textContent =
+      "4K";
+
+  } else if (
+    user.plan === "Creator"
+  ) {
+
+    $("profileQuality").textContent =
+      "1080p";
+
+  } else {
+
+    $("profileQuality").textContent =
+      "720p";
+
+  }
+
+
+  updatePlanButtons();
+
+}
+
+
+function openProfile() {
+
+  $("profileModal")
+    .classList.remove("hidden");
+
+}
+
+
+function logout() {
+
+  localStorage.removeItem(
+    "clipforgeUser"
+  );
+
+  updateUser();
+
+  closeModal("profileModal");
+
+  showToast(
+    "👋 Logged out."
+  );
+
+}
+
+
+/* =========================
+   PLAN BUTTONS
+========================= */
+
+function updatePlanButtons() {
+
+  const user =
+    getUser();
+
+  if (!user) {
+    return;
+  }
+
+
+  const buttons = {
+
+    Basic: $("basicButton"),
+
+    Creator: $("creatorButton"),
+
+    Pro: $("proButton")
+
+  };
+
+
+  Object.keys(buttons).forEach(plan => {
+
+    const button =
+      buttons[plan];
+
+    if (!button) {
+      return;
+    }
+
+
+    if (user.plan === plan) {
+
+      button.textContent =
+        "✓ Current Plan";
+
+      button.classList.add(
+        "current-plan"
+      );
+
+    } else {
+
+      button.classList.remove(
+        "current-plan"
+      );
+
+
+      if (plan === "Basic") {
+
+        button.textContent =
+          "Choose Basic";
+
+      }
+
+
+      if (plan === "Creator") {
+
+        button.textContent =
+          "Start Creating";
+
+      }
+
+
+      if (plan === "Pro") {
+
+        button.textContent =
+          "Go Pro";
+
+      }
 
     }
 
-    res.json({
+  });
 
-      connected: false
-
-    });
-
-  }
-);
+}
 
 
 /* =========================
-   DISCONNECT
+   PLANS
 ========================= */
 
-app.post(
-  "/api/youtube/disconnect",
-  (req, res) => {
+function choosePlan(name, price) {
 
-    req.session.youtube = null;
+  const user =
+    getUser();
 
-    req.session.save(() => {
 
-      res.json({
+  if (!user) {
 
-        success: true,
+    showToast(
+      "🔐 Log in first."
+    );
 
-        connected: false
+    openLogin();
 
-      });
+    return;
+  }
+
+
+  if (user.plan === name) {
+
+    showToast(
+      `✓ You already have ${name}.`
+    );
+
+    return;
+  }
+
+
+  selectedPlan = {
+
+    name: name,
+
+    price: price
+
+  };
+
+
+  $("checkoutPlan").textContent =
+    name;
+
+
+  $("checkoutPrice").textContent =
+    price === 0
+      ? "€0"
+      : `€${price.toFixed(2)} / month`;
+
+
+  $("checkoutModal")
+    .classList.remove("hidden");
+
+}
+
+
+function goToPayment() {
+
+  if (
+    selectedPlan.name === "Basic"
+  ) {
+
+    completeFreePlan();
+
+    return;
+
+  }
+
+
+  closeModal(
+    "checkoutModal"
+  );
+
+
+  $("paymentModal")
+    .classList.remove("hidden");
+
+}
+
+
+function selectPayment(
+  method,
+  button
+) {
+
+  selectedPayment =
+    method;
+
+
+  document
+    .querySelectorAll(".payment-method")
+    .forEach(element => {
+
+      element.classList.remove(
+        "active"
+      );
 
     });
 
+
+  button.classList.add(
+    "active"
+  );
+
+}
+
+
+function goToConfirm() {
+
+  const paymentNames = {
+
+    card: "Card",
+
+    paypal: "PayPal",
+
+    crypto: "Crypto"
+
+  };
+
+
+  $("confirmPlan").textContent =
+    selectedPlan.name;
+
+
+  $("confirmPayment").textContent =
+    paymentNames[selectedPayment];
+
+
+  $("confirmPrice").textContent =
+    `€${selectedPlan.price.toFixed(2)} / month`;
+
+
+  closeModal(
+    "paymentModal"
+  );
+
+
+  $("confirmModal")
+    .classList.remove("hidden");
+
+}
+
+
+function completePurchase() {
+
+  const user =
+    getUser();
+
+
+  if (!user) {
+
+    closeModal(
+      "confirmModal"
+    );
+
+    openLogin();
+
+    return;
+
   }
-);
+
+
+  user.plan =
+    selectedPlan.name;
+
+
+  saveUser(user);
+
+  updateUser();
+
+
+  closeModal(
+    "confirmModal"
+  );
+
+
+  $("successText").textContent =
+    `${selectedPlan.name} is now active on your account.`;
+
+
+  $("successModal")
+    .classList.remove("hidden");
+
+}
+
+
+function completeFreePlan() {
+
+  const user =
+    getUser();
+
+
+  if (!user) {
+    return;
+  }
+
+
+  user.plan =
+    "Basic";
+
+
+  saveUser(user);
+
+  updateUser();
+
+
+  closeModal(
+    "checkoutModal"
+  );
+
+
+  $("successText").textContent =
+    "Your Basic plan is now active.";
+
+
+  $("successModal")
+    .classList.remove("hidden");
+
+}
 
 
 /* =========================
-   CONFIG TEST
+   VIDEO
 ========================= */
 
-app.get(
-  "/api/youtube/config",
-  (req, res) => {
+function handleFile(input) {
 
-    res.json({
+  if (
+    !input.files ||
+    !input.files.length
+  ) {
 
-      googleClientId:
-        Boolean(
-          process.env.GOOGLE_CLIENT_ID
-        ),
-
-      googleClientSecret:
-        Boolean(
-          process.env.GOOGLE_CLIENT_SECRET
-        ),
-
-      sessionSecret:
-        Boolean(
-          process.env.SESSION_SECRET
-        ),
-
-      frontendUrl:
-        FRONTEND_URL,
-
-      redirectUri:
-        REDIRECT_URI
-
-    });
+    return;
 
   }
-);
+
+
+  const file =
+    input.files[0];
+
+
+  $("fileName").textContent =
+    file.name;
+
+
+  showToast(
+    "🎬 Video selected."
+  );
+
+}
+
+
+async function generateClip() {
+
+  const user =
+    getUser();
+
+
+  if (!user) {
+
+    showToast(
+      "🔐 Log in first."
+    );
+
+    openLogin();
+
+    return;
+
+  }
+
+
+  const input =
+    $("videoFile");
+
+
+  if (
+    !input.files ||
+    !input.files.length
+  ) {
+
+    showToast(
+      "❌ Select a video first."
+    );
+
+    return;
+
+  }
+
+
+  const button =
+    $("generateButton");
+
+
+  const status =
+    $("generationStatus");
+
+
+  button.disabled =
+    true;
+
+
+  button.textContent =
+    "Creating...";
+
+
+  status.textContent =
+    "⏳ Creating your clip...";
+
+
+  const formData =
+    new FormData();
+
+
+  formData.append(
+    "video",
+    input.files[0]
+  );
+
+
+  try {
+
+    const response =
+      await fetch(
+        `${BACKEND_URL}/api/create-clip`,
+        {
+          method: "POST",
+          body: formData
+        }
+      );
+
+
+    const data =
+      await response.json();
+
+
+    if (
+      !response.ok ||
+      !data.success
+    ) {
+
+      throw new Error(
+        data.error ||
+        "Could not create clip."
+      );
+
+    }
+
+
+    user.videos =
+      (user.videos || 0) + 1;
+
+
+    user.clips =
+      (user.clips || 0) + 1;
+
+
+    user.uploads =
+      (user.uploads || 0) + 1;
+
+
+    saveUser(user);
+
+    updateUser();
+
+
+    if (
+      data.clip &&
+      data.clip.url
+    ) {
+
+      addClip(
+        data.clip.url,
+        data.clip.name ||
+        "ClipForge Clip"
+      );
+
+    }
+
+
+    status.textContent =
+      "✅ Your clip is ready!";
+
+
+    showToast(
+      "🎬 Clip created!"
+    );
+
+
+  } catch (error) {
+
+    console.error(error);
+
+
+    status.textContent =
+      "❌ " + error.message;
+
+
+    showToast(
+      "❌ " + error.message
+    );
+
+
+  } finally {
+
+    button.disabled =
+      false;
+
+
+    button.textContent =
+      "Generate Clip →";
+
+  }
+
+}
+
+
+function addClip(
+  url,
+  name
+) {
+
+  const container =
+    $("clipsContainer");
+
+
+  const empty =
+    $("emptyState");
+
+
+  if (empty) {
+    empty.remove();
+  }
+
+
+  const card =
+    document.createElement("div");
+
+
+  card.className =
+    "clip-card";
+
+
+  const video =
+    document.createElement("video");
+
+
+  video.className =
+    "real-video";
+
+
+  video.controls =
+    true;
+
+
+  video.preload =
+    "metadata";
+
+
+  const source =
+    document.createElement("source");
+
+
+  source.src =
+    url;
+
+
+  source.type =
+    "video/mp4";
+
+
+  video.appendChild(
+    source
+  );
+
+
+  const title =
+    document.createElement("h3");
+
+
+  title.textContent =
+    name;
+
+
+  const text =
+    document.createElement("p");
+
+
+  text.textContent =
+    "ClipForge • Generated clip";
+
+
+  const download =
+    document.createElement("a");
+
+
+  download.className =
+    "download-btn";
+
+
+  download.href =
+    url;
+
+
+  download.download =
+    name;
+
+
+  download.textContent =
+    "⬇ Download Clip";
+
+
+  card.appendChild(
+    video
+  );
+
+
+  card.appendChild(
+    title
+  );
+
+
+  card.appendChild(
+    text
+  );
+
+
+  card.appendChild(
+    download
+  );
+
+
+  container.prepend(
+    card
+  );
+
+}
 
 
 /* =========================
-   SERVER
+   MODALS
 ========================= */
 
-app.listen(
-  PORT,
+function closeModal(id) {
+
+  const modal =
+    $(id);
+
+
+  if (modal) {
+
+    modal.classList.add(
+      "hidden"
+    );
+
+  }
+
+}
+
+
+function closeSuccess() {
+
+  closeModal(
+    "successModal"
+  );
+
+}
+
+
+/* =========================
+   START
+========================= */
+
+document.addEventListener(
+  "DOMContentLoaded",
   () => {
 
-    console.log(
-      `ClipForge backend running on port ${PORT}`
-    );
+    updateUser();
+
+    checkYouTubeStatus();
+
+    checkYouTubeCallback();
 
   }
 );

@@ -1,196 +1,203 @@
 const express = require("express");
 const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
-const { execFile } = require("child_process");
+const session = require("express-session");
+const { google } = require("googleapis");
 
 const app = express();
 
-const PORT = process.env.PORT || 10000;
-
-const uploadDir = path.join(__dirname, "uploads");
-const outputDir = path.join(__dirname, "clips");
-
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-if (!fs.existsSync(outputDir)) {
-  fs.mkdirSync(outputDir, { recursive: true });
-}
-
-app.use(cors());
 app.use(express.json());
 
-app.use("/uploads", express.static(uploadDir));
-app.use("/clips", express.static(outputDir));
+app.use(cors({
+  origin: "https://clipforge-we2q.onrender.com",
+  credentials: true
+}));
 
-const storage = multer.diskStorage({
-  destination: uploadDir,
+app.set("trust proxy", 1);
 
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-
-    const name =
-      Date.now() +
-      "-" +
-      Math.random().toString(36).substring(2, 9) +
-      ext;
-
-    cb(null, name);
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000
   }
-});
+}));
 
-const upload = multer({
-  storage,
+const PORT = process.env.PORT || 10000;
 
-  limits: {
-    fileSize: 500 * 1024 * 1024
-  },
+const REDIRECT_URI =
+  "https://clipforge-we2q.onrender.com/auth/youtube/callback";
 
-  fileFilter: (req, file, cb) => {
-    const allowed = [
-      "video/mp4",
-      "video/webm",
-      "video/quicktime",
-      "video/x-matroska"
-    ];
-
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only video files are allowed."));
-    }
-  }
-});
+function createOAuthClient() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    REDIRECT_URI
+  );
+}
 
 
 /* =========================
-   STATUS
+   TEST
 ========================= */
 
 app.get("/", (req, res) => {
   res.json({
     success: true,
     backend: "online",
-    ai: "free-demo",
-    ffmpeg: true,
+    youtube: "ready",
     message: "ClipForge backend werkt!"
   });
 });
 
 
 /* =========================
-   CREATE CLIP
+   CONNECT YOUTUBE
 ========================= */
 
-app.post("/api/create-clip", upload.single("video"), (req, res) => {
+app.get("/auth/youtube", (req, res) => {
 
-  if (!req.file) {
-    return res.status(400).json({
-      success: false,
-      error: "Geen video ontvangen."
+  try {
+
+    const oauth = createOAuthClient();
+
+    const url = oauth.generateAuthUrl({
+      access_type: "offline",
+      prompt: "consent",
+      scope: [
+        "https://www.googleapis.com/auth/youtube.upload"
+      ]
+    });
+
+    res.redirect(url);
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).send(
+      "YouTube verbinding kon niet gestart worden."
+    );
+  }
+});
+
+
+/* =========================
+   YOUTUBE CALLBACK
+========================= */
+
+app.get("/auth/youtube/callback", async (req, res) => {
+
+  try {
+
+    const code = req.query.code;
+
+    if (!code) {
+      return res.status(400).send(
+        "Geen Google authorization code ontvangen."
+      );
+    }
+
+    const oauth = createOAuthClient();
+
+    const { tokens } =
+      await oauth.getToken(code);
+
+    oauth.setCredentials(tokens);
+
+    const youtube = google.youtube({
+      version: "v3",
+      auth: oauth
+    });
+
+    const result =
+      await youtube.channels.list({
+        part: "snippet",
+        mine: true
+      });
+
+    const channel =
+      result.data.items &&
+      result.data.items[0];
+
+    if (!channel) {
+      return res.status(400).send(
+        "Geen YouTube-kanaal gevonden."
+      );
+    }
+
+    req.session.youtube = {
+      connected: true,
+      tokens: tokens,
+      channel: {
+        id: channel.id,
+        title: channel.snippet.title,
+        thumbnail:
+          channel.snippet.thumbnails?.default?.url || ""
+      }
+    };
+
+    res.redirect(
+      "https://clipforge-we2q.onrender.com/?youtube=connected"
+    );
+
+  } catch (error) {
+
+    console.error(
+      "YouTube OAuth error:",
+      error
+    );
+
+    res.status(500).send(
+      "YouTube verbinden mislukt: " +
+      error.message
+    );
+  }
+});
+
+
+/* =========================
+   YOUTUBE STATUS
+========================= */
+
+app.get("/api/youtube/status", (req, res) => {
+
+  if (
+    req.session.youtube &&
+    req.session.youtube.connected
+  ) {
+
+    return res.json({
+      connected: true,
+      channel: req.session.youtube.channel
     });
   }
 
-  const input = req.file.path;
-
-  const outputName =
-    "clip-" +
-    Date.now() +
-    "-" +
-    Math.random().toString(36).substring(2, 7) +
-    ".mp4";
-
-  const output =
-    path.join(outputDir, outputName);
-
-  /*
-    Test clip:
-    - eerste 15 seconden
-    - H264 video
-    - AAC audio
-  */
-
-  const args = [
-    "-y",
-    "-i",
-    input,
-    "-t",
-    "15",
-    "-vf",
-    "scale=-2:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "23",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "128k",
-    output
-  ];
-
-  execFile("ffmpeg", args, (error, stdout, stderr) => {
-
-    if (error) {
-
-      console.error("FFMPEG ERROR:");
-      console.error(stderr);
-
-      return res.status(500).json({
-        success: false,
-        error: "FFmpeg kon de video niet verwerken.",
-        details: stderr
-      });
-    }
-
-    /*
-      Originele upload verwijderen
-    */
-
-    try {
-      fs.unlinkSync(input);
-    } catch {}
-
-    const baseUrl =
-      `${req.protocol}://${req.get("host")}`;
-
-    res.json({
-      success: true,
-
-      clip: {
-        name: outputName,
-        url: `${baseUrl}/clips/${outputName}`
-      }
-    });
-
+  res.json({
+    connected: false
   });
-
 });
 
 
 /* =========================
-   ERROR HANDLER
+   DISCONNECT
 ========================= */
 
-app.use((err, req, res, next) => {
+app.post("/api/youtube/disconnect", (req, res) => {
 
-  console.error(err);
+  req.session.youtube = null;
 
-  res.status(500).json({
-    success: false,
-    error: err.message || "Server error"
+  res.json({
+    success: true
   });
-
 });
 
 
 /* =========================
-   START
+   SERVER
 ========================= */
 
 app.listen(PORT, () => {

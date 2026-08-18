@@ -1,165 +1,206 @@
 const express = require("express");
 const cors = require("cors");
-const { exec } = require("child_process");
+const multer = require("multer");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const { execFile } = require("child_process");
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+const uploadDir = path.join(os.tmpdir(), "clipforge-uploads");
+const outputDir = path.join(os.tmpdir(), "clipforge-clips");
 
+fs.mkdirSync(uploadDir, { recursive: true });
+fs.mkdirSync(outputDir, { recursive: true });
 
-/* =========================
-   HOME
-========================= */
-
-app.get("/", (req, res) => {
-    res.send("ClipForge werkt! 🚀");
+const upload = multer({
+  dest: uploadDir,
+  limits: {
+    fileSize: 500 * 1024 * 1024
+  }
 });
 
 
-/* =========================
-   STATUS
-========================= */
+/* HOME */
+
+app.get("/", (req, res) => {
+  res.send("ClipForge werkt! 🚀");
+});
+
+
+/* STATUS */
 
 app.get("/api/status", (req, res) => {
 
-    res.json({
-        success: true,
-        backend: "online",
-        ai: "free-demo",
-        ffmpeg: true,
-        message: "ClipForge backend werkt!"
-    });
+  res.json({
+    success: true,
+    backend: "online",
+    ffmpeg: true,
+    message: "ClipForge backend werkt!"
+  });
 
 });
 
 
-/* =========================
-   FFMPEG TEST
-========================= */
+/* FFMPEG TEST */
 
 app.get("/api/ffmpeg-test", (req, res) => {
 
-    exec("ffmpeg -version", (error, stdout) => {
+  execFile("ffmpeg", ["-version"], (error, stdout) => {
 
-        if (error) {
+    if (error) {
 
-            return res.json({
-                success: false,
-                ffmpeg: false,
-                error: error.message
-            });
+      return res.json({
+        success: false,
+        ffmpeg: false,
+        error: error.message
+      });
 
-        }
+    }
 
-        res.json({
-            success: true,
-            ffmpeg: true,
-            version: stdout.split("\n")[0]
-        });
-
+    res.json({
+      success: true,
+      ffmpeg: true,
+      version: stdout.split("\n")[0]
     });
+
+  });
 
 });
 
 
-/* =========================
-   CREATE CLIPS
-========================= */
+/* CREATE REAL CLIP */
 
-app.post("/api/create-clips", (req, res) => {
+app.post(
+  "/api/upload-clip",
+  upload.single("video"),
+  (req, res) => {
 
-    const { videoUrl } = req.body;
+    if (!req.file) {
 
-
-    if (!videoUrl) {
-
-        return res.status(400).json({
-
-            success: false,
-
-            error:
-                "Geen video-link ontvangen."
-
-        });
+      return res.status(400).json({
+        success: false,
+        error: "Geen video ontvangen."
+      });
 
     }
 
+    const input = req.file.path;
 
-    console.log(
-        "Video ontvangen:",
-        videoUrl
+    const output = path.join(
+      outputDir,
+      `${Date.now()}-clip.mp4`
     );
 
 
-    /*
-      TIJDELIJKE DEMO
+    console.log(
+      "Video ontvangen:",
+      req.file.originalname
+    );
 
-      We gebruiken hier geen
-      yt-dlp-exec meer.
-    */
 
-    const clips = [
+    execFile(
+      "ffmpeg",
+      [
+        "-y",
+        "-i",
+        input,
 
-        {
-            id: 1,
-            title: "🔥 Best Moment",
-            score: 94,
-            start: "00:30",
-            end: "01:00",
-            download: null
-        },
+        "-t",
+        "30",
 
-        {
-            id: 2,
-            title: "🚀 Viral Moment",
-            score: 89,
-            start: "02:10",
-            end: "02:40",
-            download: null
-        },
+        "-vf",
+        "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
 
-        {
-            id: 3,
-            title: "😂 Funny Moment",
-            score: 86,
-            start: "04:20",
-            end: "04:50",
-            download: null
+        "-c:v",
+        "libx264",
+
+        "-preset",
+        "veryfast",
+
+        "-crf",
+        "23",
+
+        "-c:a",
+        "aac",
+
+        "-b:a",
+        "128k",
+
+        "-movflags",
+        "+faststart",
+
+        output
+      ],
+      (error, stdout, stderr) => {
+
+        try {
+          fs.unlinkSync(input);
+        } catch {}
+
+
+        if (error) {
+
+          console.error(
+            "FFMPEG ERROR:",
+            stderr
+          );
+
+          return res.status(500).json({
+            success: false,
+            error:
+              "FFmpeg kon de video niet verwerken."
+          });
+
         }
 
-    ];
 
+        if (!fs.existsSync(output)) {
 
-    res.json({
+          return res.status(500).json({
+            success: false,
+            error:
+              "Clip werd niet gemaakt."
+          });
 
-        success: true,
+        }
 
-        demo: true,
-
-        message:
-            "ClipForge demo werkt!",
-
-        clips
-
-    });
-
-});
-
-
-/* =========================
-   START
-========================= */
-
-app.listen(
-    PORT,
-    () => {
 
         console.log(
-            `ClipForge draait op poort ${PORT}`
+          "Clip succesvol gemaakt."
         );
 
-    }
+
+        res.download(
+          output,
+          "clipforge-short.mp4",
+          () => {
+
+            try {
+              fs.unlinkSync(output);
+            } catch {}
+
+          }
+        );
+
+      }
+    );
+
+  }
 );
+
+
+/* START */
+
+app.listen(PORT, () => {
+
+  console.log(
+    `ClipForge draait op poort ${PORT}`
+  );
+
+});

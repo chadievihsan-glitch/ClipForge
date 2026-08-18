@@ -7,23 +7,15 @@ const app = express();
 
 const PORT = process.env.PORT || 10000;
 
-/*
-  BELANGRIJK:
-  Zet FRONTEND_URL in Render Environment Variables.
-
-  Bijvoorbeeld:
-  FRONTEND_URL=https://jouw-frontend.onrender.com
-
-  Je backend blijft:
-  https://clipforge-we2q.onrender.com
-*/
+const BACKEND_URL =
+  "https://clipforge-we2q.onrender.com";
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
   "https://clipforge-we2q.onrender.com";
 
 const REDIRECT_URI =
-  "https://clipforge-we2q.onrender.com/auth/youtube/callback";
+  `${BACKEND_URL}/auth/youtube/callback`;
 
 
 /* =========================
@@ -79,17 +71,24 @@ function createOAuthClient() {
   const clientSecret =
     process.env.GOOGLE_CLIENT_SECRET;
 
+
   if (!clientId) {
+
     throw new Error(
       "GOOGLE_CLIENT_ID ontbreekt op Render."
     );
+
   }
 
+
   if (!clientSecret) {
+
     throw new Error(
       "GOOGLE_CLIENT_SECRET ontbreekt op Render."
     );
+
   }
+
 
   return new google.auth.OAuth2(
     clientId,
@@ -100,18 +99,24 @@ function createOAuthClient() {
 
 
 /* =========================
-   HOME / TEST
+   HOME
 ========================= */
 
 app.get("/", (req, res) => {
 
   res.json({
+
     success: true,
+
     backend: "online",
+
     youtube: "ready",
+
     ffmpeg: true,
+
     message:
       "ClipForge backend werkt!"
+
   });
 
 });
@@ -130,6 +135,7 @@ app.get(
       const oauth =
         createOAuthClient();
 
+
       const authUrl =
         oauth.generateAuthUrl({
 
@@ -138,12 +144,18 @@ app.get(
           prompt: "consent",
 
           scope: [
-            "https://www.googleapis.com/auth/youtube.upload"
+
+            "https://www.googleapis.com/auth/youtube.upload",
+
+            "https://www.googleapis.com/auth/youtube.readonly"
+
           ]
 
         });
 
+
       res.redirect(authUrl);
+
 
     } catch (error) {
 
@@ -151,6 +163,7 @@ app.get(
         "YouTube OAuth error:",
         error
       );
+
 
       res.status(500).json({
 
@@ -180,6 +193,7 @@ app.get(
       const code =
         req.query.code;
 
+
       if (!code) {
 
         return res
@@ -195,11 +209,17 @@ app.get(
         createOAuthClient();
 
 
-      const { tokens } =
+      const result =
         await oauth.getToken(code);
 
 
-      oauth.setCredentials(tokens);
+      const tokens =
+        result.tokens;
+
+
+      oauth.setCredentials(
+        tokens
+      );
 
 
       const youtube =
@@ -211,6 +231,11 @@ app.get(
 
         });
 
+
+      /*
+        Haal het kanaal van de
+        ingelogde gebruiker op.
+      */
 
       const response =
         await youtube.channels.list({
@@ -245,7 +270,8 @@ app.get(
 
         channel: {
 
-          id: channel.id,
+          id:
+            channel.id,
 
           title:
             channel.snippet?.title ||
@@ -270,12 +296,14 @@ app.get(
 
       });
 
+
     } catch (error) {
 
       console.error(
         "YouTube callback error:",
         error
       );
+
 
       res
         .status(500)
@@ -300,6 +328,7 @@ app.get(
 
     const youtube =
       req.session.youtube;
+
 
     if (
       youtube &&
@@ -329,7 +358,7 @@ app.get(
 
 
 /* =========================
-   DISCONNECT YOUTUBE
+   DISCONNECT
 ========================= */
 
 app.post(
@@ -338,6 +367,7 @@ app.post(
 
     req.session.youtube =
       null;
+
 
     req.session.save(() => {
 
@@ -356,7 +386,7 @@ app.post(
 
 
 /* =========================
-   CONFIG CHECK
+   CONFIG TEST
 ========================= */
 
 app.get(

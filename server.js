@@ -1,5 +1,4 @@
-const BACKEND_URL =
-  "https://clipforge-we2q.onrender.com";
+const BACKEND_URL = "https://clipforge-we2q.onrender.com";
 
 let authMode = "login";
 
@@ -10,7 +9,6 @@ let selectedPlan = {
 
 let selectedPayment = "card";
 
-
 /* =========================
    HELPERS
 ========================= */
@@ -19,15 +17,12 @@ function $(id) {
   return document.getElementById(id);
 }
 
-
 function showToast(message) {
-
   const toast = $("toast");
 
   if (!toast) return;
 
   toast.textContent = message;
-
   toast.classList.add("show");
 
   setTimeout(() => {
@@ -35,15 +30,10 @@ function showToast(message) {
   }, 3000);
 }
 
-
 function getUser() {
+  const saved = localStorage.getItem("clipforgeUser");
 
-  const saved =
-    localStorage.getItem("clipforgeUser");
-
-  if (!saved) {
-    return null;
-  }
+  if (!saved) return null;
 
   try {
     return JSON.parse(saved);
@@ -52,177 +42,112 @@ function getUser() {
   }
 }
 
-
 function saveUser(user) {
-
   localStorage.setItem(
     "clipforgeUser",
     JSON.stringify(user)
   );
 }
 
-
 /* =========================
    YOUTUBE
 ========================= */
 
 function connectYouTube() {
-
-  window.open(
-    `${BACKEND_URL}/auth/youtube`,
-    "_blank",
-    "noopener,noreferrer"
-  );
-
+  window.location.href =
+    BACKEND_URL + "/auth/youtube";
 }
 
-
 async function checkYouTubeStatus() {
+  const button = $("youtubeButton");
 
-  const button =
-    $("youtubeButton");
-
-  if (!button) {
-    return;
-  }
+  if (!button) return;
 
   try {
-
-    const response =
-      await fetch(
-        `${BACKEND_URL}/api/youtube/status`,
-        {
-          method: "GET",
-          credentials: "include"
-        }
-      );
-
+    const response = await fetch(
+      BACKEND_URL + "/api/youtube/status",
+      {
+        method: "GET",
+        credentials: "include"
+      }
+    );
 
     if (!response.ok) {
-      throw new Error(
-        "YouTube status kon niet worden opgehaald."
-      );
+      throw new Error("YouTube status error");
     }
 
+    const data = await response.json();
 
-    const data =
-      await response.json();
-
-
-    if (
-      data.connected &&
-      data.channel
-    ) {
-
+    if (data.connected && data.channel) {
       button.textContent =
-        `✓ ${data.channel.title}`;
+        "✓ " + data.channel.title;
 
       button.classList.add(
         "youtube-connected"
       );
-
-      button.title =
-        "YouTube connected";
-
     } else {
-
       button.textContent =
         "▶ Connect YouTube";
 
       button.classList.remove(
         "youtube-connected"
       );
-
-      button.title =
-        "Connect your YouTube channel";
-
     }
 
   } catch (error) {
-
     console.error(
-      "YouTube status error:",
+      "YouTube status:",
       error
     );
-
   }
-
 }
 
-
-/* =========================
-   YOUTUBE DISCONNECT
-========================= */
-
 async function disconnectYouTube() {
-
   try {
+    const response = await fetch(
+      BACKEND_URL + "/api/youtube/disconnect",
+      {
+        method: "POST",
+        credentials: "include"
+      }
+    );
 
-    const response =
-      await fetch(
-        `${BACKEND_URL}/api/youtube/disconnect`,
-        {
-          method: "POST",
-          credentials: "include"
-        }
-      );
-
-
-    const data =
-      await response.json();
-
+    const data = await response.json();
 
     if (!data.success) {
-
       throw new Error(
-        "YouTube disconnect mislukt."
+        "Disconnect failed"
       );
-
     }
-
 
     showToast(
       "👋 YouTube disconnected."
     );
 
-
     checkYouTubeStatus();
 
-
   } catch (error) {
-
     console.error(error);
 
     showToast(
-      "❌ YouTube disconnect mislukt."
+      "❌ YouTube disconnect failed."
     );
-
   }
-
 }
 
-
-/* =========================
-   YOUTUBE CALLBACK
-========================= */
-
 function checkYouTubeCallback() {
-
   const params =
     new URLSearchParams(
       window.location.search
     );
 
-
   if (
     params.get("youtube") ===
     "connected"
   ) {
-
     showToast(
-      "✅ YouTube succesvol verbonden!"
+      "✅ YouTube successfully connected!"
     );
-
 
     window.history.replaceState(
       {},
@@ -230,31 +155,37 @@ function checkYouTubeCallback() {
       window.location.pathname
     );
 
-
     setTimeout(() => {
-
       checkYouTubeStatus();
-
     }, 500);
-
   }
 
-}
+  if (params.get("youtube") === "error") {
+    showToast(
+      "❌ YouTube connection failed."
+    );
 
+    window.history.replaceState(
+      {},
+      document.title,
+      window.location.pathname
+    );
+  }
+}
 
 /* =========================
    LOGIN
 ========================= */
 
 function openLogin() {
+  const modal = $("loginModal");
 
-  $("loginModal")
-    .classList.remove("hidden");
+  if (modal) {
+    modal.classList.remove("hidden");
+  }
 }
 
-
 function switchAuth() {
-
   authMode =
     authMode === "login"
       ? "register"
@@ -263,42 +194,33 @@ function switchAuth() {
   const register =
     authMode === "register";
 
-
   $("authTitle").textContent =
     register
       ? "Create account"
       : "Welcome back";
-
 
   $("authDescription").textContent =
     register
       ? "Create your ClipForge account."
       : "Log in to your ClipForge account.";
 
-
-  $("authName")
-    .classList.toggle(
-      "hidden",
-      !register
-    );
-
+  $("authName").classList.toggle(
+    "hidden",
+    !register
+  );
 
   $("authButtonText").textContent =
     register
       ? "Create account"
       : "Log in";
 
-
   $("switchAuthButton").textContent =
     register
       ? "Already have an account? Log in"
       : "Don't have an account? Create one";
-
 }
 
-
 function submitAuth() {
-
   const name =
     $("authName").value.trim();
 
@@ -308,9 +230,7 @@ function submitAuth() {
   const password =
     $("authPassword").value.trim();
 
-
   if (!email || !password) {
-
     showToast(
       "❌ Fill in your email and password."
     );
@@ -318,12 +238,10 @@ function submitAuth() {
     return;
   }
 
-
   if (
     authMode === "register" &&
     !name
   ) {
-
     showToast(
       "❌ Enter your name."
     );
@@ -331,35 +249,20 @@ function submitAuth() {
     return;
   }
 
-
-  let user =
-    getUser();
-
+  let user = getUser();
 
   if (authMode === "register") {
-
     user = {
-
-      name: name,
-
-      email: email,
-
-      password: password,
-
+      name,
+      email,
+      password,
       plan: "Basic",
-
       videos: 0,
-
       clips: 0,
-
       uploads: 0
-
     };
-
   } else {
-
     if (!user) {
-
       showToast(
         "❌ No account found. Create one first."
       );
@@ -367,24 +270,19 @@ function submitAuth() {
       return;
     }
 
-
     if (
       user.email !== email ||
       user.password !== password
     ) {
-
       showToast(
         "❌ Incorrect email or password."
       );
 
       return;
     }
-
   }
 
-
   saveUser(user);
-
   updateUser();
 
   closeModal("loginModal");
@@ -392,97 +290,95 @@ function submitAuth() {
   showToast(
     `✅ Welcome ${user.name}!`
   );
-
 }
 
-
 /* =========================
-   USER / PROFILE
+   USER
 ========================= */
 
 function updateUser() {
-
-  const user =
-    getUser();
-
+  const user = getUser();
 
   if (!user) {
+    $("loginButton")?.classList.remove(
+      "hidden"
+    );
 
-    $("loginButton")
-      .classList.remove("hidden");
-
-    $("profileButton")
-      .classList.add("hidden");
+    $("profileButton")?.classList.add(
+      "hidden"
+    );
 
     return;
   }
 
+  $("loginButton")?.classList.add(
+    "hidden"
+  );
 
-  $("loginButton")
-    .classList.add("hidden");
+  $("profileButton")?.classList.remove(
+    "hidden"
+  );
 
-  $("profileButton")
-    .classList.remove("hidden");
-
-
-  $("navName").textContent =
-    `${user.name} • ${user.plan}`;
-
-
-  $("profileName").textContent =
-    user.name;
-
-  $("profileEmail").textContent =
-    user.email;
-
-  $("profilePlan").textContent =
-    user.plan;
-
-  $("profileVideos").textContent =
-    user.videos || 0;
-
-  $("profileClips").textContent =
-    user.clips || 0;
-
-  $("profileUploads").textContent =
-    user.uploads || 0;
-
-
-  if (user.plan === "Pro") {
-
-    $("profileQuality").textContent =
-      "4K";
-
-  } else if (
-    user.plan === "Creator"
-  ) {
-
-    $("profileQuality").textContent =
-      "1080p";
-
-  } else {
-
-    $("profileQuality").textContent =
-      "720p";
-
+  if ($("navName")) {
+    $("navName").textContent =
+      `${user.name} • ${user.plan}`;
   }
 
+  if ($("profileName")) {
+    $("profileName").textContent =
+      user.name;
+  }
+
+  if ($("profileEmail")) {
+    $("profileEmail").textContent =
+      user.email;
+  }
+
+  if ($("profilePlan")) {
+    $("profilePlan").textContent =
+      user.plan;
+  }
+
+  if ($("profileVideos")) {
+    $("profileVideos").textContent =
+      user.videos || 0;
+  }
+
+  if ($("profileClips")) {
+    $("profileClips").textContent =
+      user.clips || 0;
+  }
+
+  if ($("profileUploads")) {
+    $("profileUploads").textContent =
+      user.uploads || 0;
+  }
+
+  if ($("profileQuality")) {
+    if (user.plan === "Pro") {
+      $("profileQuality").textContent =
+        "4K";
+    } else if (
+      user.plan === "Creator"
+    ) {
+      $("profileQuality").textContent =
+        "1080p";
+    } else {
+      $("profileQuality").textContent =
+        "720p";
+    }
+  }
 
   updatePlanButtons();
-
 }
-
 
 function openProfile() {
-
-  $("profileModal")
-    .classList.remove("hidden");
-
+  $("profileModal")?.classList.remove(
+    "hidden"
+  );
 }
 
-
 function logout() {
-
   localStorage.removeItem(
     "clipforgeUser"
   );
@@ -494,103 +390,64 @@ function logout() {
   showToast(
     "👋 Logged out."
   );
-
 }
-
-
-/* =========================
-   PLAN BUTTONS
-========================= */
-
-function updatePlanButtons() {
-
-  const user =
-    getUser();
-
-  if (!user) {
-    return;
-  }
-
-
-  const buttons = {
-
-    Basic: $("basicButton"),
-
-    Creator: $("creatorButton"),
-
-    Pro: $("proButton")
-
-  };
-
-
-  Object.keys(buttons).forEach(plan => {
-
-    const button =
-      buttons[plan];
-
-    if (!button) {
-      return;
-    }
-
-
-    if (user.plan === plan) {
-
-      button.textContent =
-        "✓ Current Plan";
-
-      button.classList.add(
-        "current-plan"
-      );
-
-    } else {
-
-      button.classList.remove(
-        "current-plan"
-      );
-
-
-      if (plan === "Basic") {
-
-        button.textContent =
-          "Choose Basic";
-
-      }
-
-
-      if (plan === "Creator") {
-
-        button.textContent =
-          "Start Creating";
-
-      }
-
-
-      if (plan === "Pro") {
-
-        button.textContent =
-          "Go Pro";
-
-      }
-
-    }
-
-  });
-
-}
-
 
 /* =========================
    PLANS
 ========================= */
 
+function updatePlanButtons() {
+  const user = getUser();
+
+  if (!user) return;
+
+  const buttons = {
+    Basic: $("basicButton"),
+    Creator: $("creatorButton"),
+    Pro: $("proButton")
+  };
+
+  Object.keys(buttons).forEach(
+    plan => {
+      const button = buttons[plan];
+
+      if (!button) return;
+
+      if (user.plan === plan) {
+        button.textContent =
+          "✓ Current Plan";
+
+        button.classList.add(
+          "current-plan"
+        );
+      } else {
+        button.classList.remove(
+          "current-plan"
+        );
+
+        if (plan === "Basic") {
+          button.textContent =
+            "Choose Basic";
+        }
+
+        if (plan === "Creator") {
+          button.textContent =
+            "Start Creating";
+        }
+
+        if (plan === "Pro") {
+          button.textContent =
+            "Go Pro";
+        }
+      }
+    }
+  );
+}
+
 function choosePlan(name, price) {
-
-  const user =
-    getUser();
-
+  const user = getUser();
 
   if (!user) {
-
     showToast(
       "🔐 Log in first."
     );
@@ -600,9 +457,7 @@ function choosePlan(name, price) {
     return;
   }
 
-
   if (user.plan === name) {
-
     showToast(
       `✓ You already have ${name}.`
     );
@@ -610,236 +465,150 @@ function choosePlan(name, price) {
     return;
   }
 
-
   selectedPlan = {
-
-    name: name,
-
-    price: price
-
+    name,
+    price
   };
-
 
   $("checkoutPlan").textContent =
     name;
-
 
   $("checkoutPrice").textContent =
     price === 0
       ? "€0"
       : `€${price.toFixed(2)} / month`;
 
-
-  $("checkoutModal")
-    .classList.remove("hidden");
-
+  $("checkoutModal").classList.remove(
+    "hidden"
+  );
 }
 
-
 function goToPayment() {
-
   if (
     selectedPlan.name === "Basic"
   ) {
-
     completeFreePlan();
-
     return;
-
   }
 
+  closeModal("checkoutModal");
 
-  closeModal(
-    "checkoutModal"
+  $("paymentModal").classList.remove(
+    "hidden"
   );
-
-
-  $("paymentModal")
-    .classList.remove("hidden");
-
 }
-
 
 function selectPayment(
   method,
   button
 ) {
-
-  selectedPayment =
-    method;
-
+  selectedPayment = method;
 
   document
     .querySelectorAll(".payment-method")
     .forEach(element => {
-
       element.classList.remove(
         "active"
       );
-
     });
 
-
-  button.classList.add(
-    "active"
-  );
-
+  button.classList.add("active");
 }
 
-
 function goToConfirm() {
-
   const paymentNames = {
-
     card: "Card",
-
     paypal: "PayPal",
-
     crypto: "Crypto"
-
   };
-
 
   $("confirmPlan").textContent =
     selectedPlan.name;
 
-
   $("confirmPayment").textContent =
     paymentNames[selectedPayment];
-
 
   $("confirmPrice").textContent =
     `€${selectedPlan.price.toFixed(2)} / month`;
 
+  closeModal("paymentModal");
 
-  closeModal(
-    "paymentModal"
+  $("confirmModal").classList.remove(
+    "hidden"
   );
-
-
-  $("confirmModal")
-    .classList.remove("hidden");
-
 }
 
-
 function completePurchase() {
-
-  const user =
-    getUser();
-
+  const user = getUser();
 
   if (!user) {
-
-    closeModal(
-      "confirmModal"
-    );
-
+    closeModal("confirmModal");
     openLogin();
-
     return;
-
   }
-
 
   user.plan =
     selectedPlan.name;
 
-
   saveUser(user);
-
   updateUser();
 
-
-  closeModal(
-    "confirmModal"
-  );
-
+  closeModal("confirmModal");
 
   $("successText").textContent =
     `${selectedPlan.name} is now active on your account.`;
 
-
-  $("successModal")
-    .classList.remove("hidden");
-
+  $("successModal").classList.remove(
+    "hidden"
+  );
 }
 
-
 function completeFreePlan() {
+  const user = getUser();
 
-  const user =
-    getUser();
+  if (!user) return;
 
-
-  if (!user) {
-    return;
-  }
-
-
-  user.plan =
-    "Basic";
-
+  user.plan = "Basic";
 
   saveUser(user);
-
   updateUser();
 
-
-  closeModal(
-    "checkoutModal"
-  );
-
+  closeModal("checkoutModal");
 
   $("successText").textContent =
     "Your Basic plan is now active.";
 
-
-  $("successModal")
-    .classList.remove("hidden");
-
+  $("successModal").classList.remove(
+    "hidden"
+  );
 }
-
 
 /* =========================
    VIDEO
 ========================= */
 
 function handleFile(input) {
-
   if (
     !input.files ||
     !input.files.length
   ) {
-
     return;
-
   }
 
-
-  const file =
-    input.files[0];
-
+  const file = input.files[0];
 
   $("fileName").textContent =
     file.name;
 
-
   showToast(
     "🎬 Video selected."
   );
-
 }
 
-
 async function generateClip() {
-
-  const user =
-    getUser();
-
+  const user = getUser();
 
   if (!user) {
-
     showToast(
       "🔐 Log in first."
     );
@@ -847,60 +616,43 @@ async function generateClip() {
     openLogin();
 
     return;
-
   }
 
-
-  const input =
-    $("videoFile");
-
+  const input = $("videoFile");
 
   if (
     !input.files ||
     !input.files.length
   ) {
-
     showToast(
       "❌ Select a video first."
     );
 
     return;
-
   }
-
 
   const button =
     $("generateButton");
 
-
   const status =
     $("generationStatus");
 
-
-  button.disabled =
-    true;
-
-
+  button.disabled = true;
   button.textContent =
     "Creating...";
-
 
   status.textContent =
     "⏳ Creating your clip...";
 
-
   const formData =
     new FormData();
-
 
   formData.append(
     "video",
     input.files[0]
   );
 
-
   try {
-
     const response =
       await fetch(
         `${BACKEND_URL}/api/create-clip`,
@@ -910,243 +662,147 @@ async function generateClip() {
         }
       );
 
-
     const data =
       await response.json();
-
 
     if (
       !response.ok ||
       !data.success
     ) {
-
       throw new Error(
         data.error ||
         "Could not create clip."
       );
-
     }
-
 
     user.videos =
       (user.videos || 0) + 1;
 
-
     user.clips =
       (user.clips || 0) + 1;
-
 
     user.uploads =
       (user.uploads || 0) + 1;
 
-
     saveUser(user);
-
     updateUser();
-
 
     if (
       data.clip &&
       data.clip.url
     ) {
-
       addClip(
         data.clip.url,
         data.clip.name ||
-        "ClipForge Clip"
+          "ClipForge Clip"
       );
-
     }
-
 
     status.textContent =
       "✅ Your clip is ready!";
-
 
     showToast(
       "🎬 Clip created!"
     );
 
-
   } catch (error) {
-
     console.error(error);
-
 
     status.textContent =
       "❌ " + error.message;
-
 
     showToast(
       "❌ " + error.message
     );
 
-
   } finally {
-
-    button.disabled =
-      false;
-
+    button.disabled = false;
 
     button.textContent =
       "Generate Clip →";
-
   }
-
 }
 
-
-function addClip(
-  url,
-  name
-) {
-
+function addClip(url, name) {
   const container =
     $("clipsContainer");
 
-
   const empty =
     $("emptyState");
-
 
   if (empty) {
     empty.remove();
   }
 
-
   const card =
     document.createElement("div");
-
 
   card.className =
     "clip-card";
 
-
   const video =
     document.createElement("video");
-
 
   video.className =
     "real-video";
 
-
-  video.controls =
-    true;
-
-
-  video.preload =
-    "metadata";
-
+  video.controls = true;
+  video.preload = "metadata";
 
   const source =
     document.createElement("source");
 
+  source.src = url;
+  source.type = "video/mp4";
 
-  source.src =
-    url;
-
-
-  source.type =
-    "video/mp4";
-
-
-  video.appendChild(
-    source
-  );
-
+  video.appendChild(source);
 
   const title =
     document.createElement("h3");
 
-
-  title.textContent =
-    name;
-
+  title.textContent = name;
 
   const text =
     document.createElement("p");
 
-
   text.textContent =
     "ClipForge • Generated clip";
-
 
   const download =
     document.createElement("a");
 
-
   download.className =
     "download-btn";
 
-
-  download.href =
-    url;
-
-
-  download.download =
-    name;
-
+  download.href = url;
+  download.download = name;
 
   download.textContent =
     "⬇ Download Clip";
 
+  card.appendChild(video);
+  card.appendChild(title);
+  card.appendChild(text);
+  card.appendChild(download);
 
-  card.appendChild(
-    video
-  );
-
-
-  card.appendChild(
-    title
-  );
-
-
-  card.appendChild(
-    text
-  );
-
-
-  card.appendChild(
-    download
-  );
-
-
-  container.prepend(
-    card
-  );
-
+  container.prepend(card);
 }
-
 
 /* =========================
    MODALS
 ========================= */
 
 function closeModal(id) {
-
-  const modal =
-    $(id);
-
+  const modal = $(id);
 
   if (modal) {
-
-    modal.classList.add(
-      "hidden"
-    );
-
+    modal.classList.add("hidden");
   }
-
 }
-
 
 function closeSuccess() {
-
-  closeModal(
-    "successModal"
-  );
-
+  closeModal("successModal");
 }
-
 
 /* =========================
    START
@@ -1155,12 +811,8 @@ function closeSuccess() {
 document.addEventListener(
   "DOMContentLoaded",
   () => {
-
     updateUser();
-
-    checkYouTubeStatus();
-
     checkYouTubeCallback();
-
+    checkYouTubeStatus();
   }
 );

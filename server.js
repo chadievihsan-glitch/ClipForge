@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const { exec } = require("child_process");
 
 const app = express();
 
@@ -14,22 +15,73 @@ const PORT = process.env.PORT || 3000;
 ========================= */
 
 app.get("/", (req, res) => {
+
     res.send("ClipForge werkt! 🚀");
+
 });
 
 
 /* =========================
-   BACKEND TEST
+   STATUS
 ========================= */
 
 app.get("/api/status", (req, res) => {
 
     res.json({
+
         success: true,
+
         backend: "online",
+
         ai: "free-demo",
-        message: "ClipForge backend werkt!"
+
+        message:
+            "ClipForge backend werkt!"
+
     });
+
+});
+
+
+/* =========================
+   FFMPEG TEST
+========================= */
+
+app.get("/api/ffmpeg-test", (req, res) => {
+
+    exec(
+        "ffmpeg -version",
+        (error, stdout, stderr) => {
+
+            if (error) {
+
+                return res.json({
+
+                    success: false,
+
+                    ffmpeg: false,
+
+                    error:
+                        error.message
+
+                });
+
+            }
+
+
+            res.json({
+
+                success: true,
+
+                ffmpeg: true,
+
+                version:
+                    stdout.split("\n")[0]
+
+            });
+
+        }
+    );
 
 });
 
@@ -38,139 +90,143 @@ app.get("/api/status", (req, res) => {
    CREATE CLIPS
 ========================= */
 
-app.post("/api/create-clips", async (req, res) => {
+app.post(
+    "/api/create-clips",
+    async (req, res) => {
 
-    try {
+        try {
 
-        const { videoUrl } = req.body;
+            const {
+                videoUrl
+            } = req.body;
 
 
-        if (!videoUrl) {
+            if (!videoUrl) {
 
-            return res.status(400).json({
+                return res.status(400).json({
+
+                    success: false,
+
+                    error:
+                        "Geen video-link ontvangen."
+
+                });
+
+            }
+
+
+            console.log(
+                "Video ontvangen:",
+                videoUrl
+            );
+
+
+            /*
+            TIJDELIJKE GRATIS DEMO
+
+            Dit maakt nog geen echte MP4.
+            Eerst testen we of FFmpeg
+            beschikbaar is op Render.
+            */
+
+
+            const clips = [
+
+                {
+
+                    id: 1,
+
+                    title:
+                        "🔥 Best Moment",
+
+                    score: 94,
+
+                    start:
+                        "00:30",
+
+                    end:
+                        "01:00",
+
+                    download:
+                        null
+
+                },
+
+                {
+
+                    id: 2,
+
+                    title:
+                        "🚀 Viral Moment",
+
+                    score: 89,
+
+                    start:
+                        "02:10",
+
+                    end:
+                        "02:40",
+
+                    download:
+                        null
+
+                },
+
+                {
+
+                    id: 3,
+
+                    title:
+                        "😂 Funny Moment",
+
+                    score: 86,
+
+                    start:
+                        "04:20",
+
+                    end:
+                        "04:50",
+
+                    download:
+                        null
+
+                }
+
+            ];
+
+
+            res.json({
+
+                success: true,
+
+                demo: true,
+
+                message:
+                    "ClipForge demo werkt!",
+
+                clips
+
+            });
+
+
+        } catch (error) {
+
+            console.error(error);
+
+
+            res.status(500).json({
 
                 success: false,
 
                 error:
-                    "Geen video-link ontvangen."
+                    error.message
 
             });
 
         }
 
-
-        console.log(
-            "Video ontvangen:",
-            videoUrl
-        );
-
-
-        /*
-        GRATIS DEMO
-
-        We maken hier tijdelijk
-        clip-resultaten zonder
-        betaalde AI API.
-        */
-
-
-        const clips = [
-
-            {
-                id: 1,
-
-                title:
-                    "🔥 Best Moment",
-
-                score:
-                    94,
-
-                start:
-                    "00:30",
-
-                end:
-                    "01:00",
-
-                download:
-                    null
-            },
-
-            {
-                id: 2,
-
-                title:
-                    "🚀 Viral Moment",
-
-                score:
-                    89,
-
-                start:
-                    "02:10",
-
-                end:
-                    "02:40",
-
-                download:
-                    null
-            },
-
-            {
-                id: 3,
-
-                title:
-                    "😂 Funny Moment",
-
-                score:
-                    86,
-
-                start:
-                    "04:20",
-
-                end:
-                    "04:50",
-
-                download:
-                    null
-            }
-
-        ];
-
-
-        res.json({
-
-            success:
-                true,
-
-            demo:
-                true,
-
-            message:
-                "Gratis ClipForge demo",
-
-            clips:
-                clips
-
-        });
-
-
-    } catch (error) {
-
-        console.error(error);
-
-
-        res.status(500).json({
-
-            success:
-                false,
-
-            error:
-                error.message
-
-        });
-
     }
-
-});
+);
 
 
 /* =========================

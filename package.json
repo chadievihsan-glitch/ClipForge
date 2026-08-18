@@ -1,6 +1,7 @@
 {
   "name": "clipforge",
   "version": "1.0.0",
+  "description": "ClipForge video clipping platform",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,5 +11,6 @@
     "express": "^5.2.1",
     "express-session": "^1.18.1",
     "googleapis": "^144.0.0"
-  }
+  },
+  "type": "commonjs"
 }

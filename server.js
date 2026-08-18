@@ -7,11 +7,23 @@ const app = express();
 
 const PORT = process.env.PORT || 10000;
 
+/*
+  BELANGRIJK:
+  Zet FRONTEND_URL in Render Environment Variables.
+
+  Bijvoorbeeld:
+  FRONTEND_URL=https://jouw-frontend.onrender.com
+
+  Je backend blijft:
+  https://clipforge-we2q.onrender.com
+*/
+
 const FRONTEND_URL =
+  process.env.FRONTEND_URL ||
   "https://clipforge-we2q.onrender.com";
 
 const REDIRECT_URI =
-  `${FRONTEND_URL}/auth/youtube/callback`;
+  "https://clipforge-we2q.onrender.com/auth/youtube/callback";
 
 
 /* =========================
@@ -22,27 +34,37 @@ app.set("trust proxy", 1);
 
 app.use(express.json());
 
-app.use(cors({
-  origin: FRONTEND_URL,
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: FRONTEND_URL,
+    credentials: true
+  })
+);
 
-app.use(session({
-  secret:
-    process.env.SESSION_SECRET ||
-    "clipforge-secret-2026-change-this",
 
-  resave: false,
+/* =========================
+   SESSION
+========================= */
 
-  saveUninitialized: false,
+app.use(
+  session({
+    secret:
+      process.env.SESSION_SECRET ||
+      "CHANGE_THIS_SESSION_SECRET",
 
-  cookie: {
-    secure: true,
-    httpOnly: true,
-    sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  }
-}));
+    resave: false,
+
+    saveUninitialized: false,
+
+    cookie: {
+      secure: true,
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge:
+        7 * 24 * 60 * 60 * 1000
+    }
+  })
+);
 
 
 /* =========================
@@ -51,14 +73,28 @@ app.use(session({
 
 function createOAuthClient() {
 
+  const clientId =
+    process.env.GOOGLE_CLIENT_ID;
+
+  const clientSecret =
+    process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!clientId) {
+    throw new Error(
+      "GOOGLE_CLIENT_ID ontbreekt op Render."
+    );
+  }
+
+  if (!clientSecret) {
+    throw new Error(
+      "GOOGLE_CLIENT_SECRET ontbreekt op Render."
+    );
+  }
+
   return new google.auth.OAuth2(
-
-    process.env.GOOGLE_CLIENT_ID,
-
-    process.env.GOOGLE_CLIENT_SECRET,
-
+    clientId,
+    clientSecret,
     REDIRECT_URI
-
   );
 }
 
@@ -70,89 +106,65 @@ function createOAuthClient() {
 app.get("/", (req, res) => {
 
   res.json({
-
     success: true,
-
     backend: "online",
-
     youtube: "ready",
-
     ffmpeg: true,
-
     message:
       "ClipForge backend werkt!"
-
   });
 
 });
 
 
 /* =========================
-   CONNECT YOUTUBE
+   YOUTUBE CONNECT
 ========================= */
 
-app.get("/auth/youtube", (req, res) => {
+app.get(
+  "/auth/youtube",
+  (req, res) => {
 
-  try {
+    try {
 
-    if (
-      !process.env.GOOGLE_CLIENT_ID ||
-      !process.env.GOOGLE_CLIENT_SECRET
-    ) {
+      const oauth =
+        createOAuthClient();
 
-      return res.status(500).json({
+      const authUrl =
+        oauth.generateAuthUrl({
+
+          access_type: "offline",
+
+          prompt: "consent",
+
+          scope: [
+            "https://www.googleapis.com/auth/youtube.upload"
+          ]
+
+        });
+
+      res.redirect(authUrl);
+
+    } catch (error) {
+
+      console.error(
+        "YouTube OAuth error:",
+        error
+      );
+
+      res.status(500).json({
 
         success: false,
 
         error:
-          "Google OAuth gegevens ontbreken op Render."
+          error.message
 
       });
 
     }
 
-
-    const oauth =
-      createOAuthClient();
-
-
-    const authUrl =
-      oauth.generateAuthUrl({
-
-        access_type: "offline",
-
-        prompt: "consent",
-
-        scope: [
-          "https://www.googleapis.com/auth/youtube.upload"
-        ]
-
-      });
-
-
-    res.redirect(authUrl);
-
-
-  } catch (error) {
-
-    console.error(
-      "YouTube start error:",
-      error
-    );
-
-
-    res.status(500).json({
-
-      success: false,
-
-      error:
-        error.message
-
-    });
-
   }
-
-});
+);
 
 
 /* =========================
@@ -168,12 +180,13 @@ app.get(
       const code =
         req.query.code;
 
-
       if (!code) {
 
-        return res.status(400).send(
-          "Geen Google authorization code."
-        );
+        return res
+          .status(400)
+          .send(
+            "Geen Google authorization code."
+          );
 
       }
 
@@ -182,12 +195,8 @@ app.get(
         createOAuthClient();
 
 
-      const result =
+      const { tokens } =
         await oauth.getToken(code);
-
-
-      const tokens =
-        result.tokens;
 
 
       oauth.setCredentials(tokens);
@@ -219,9 +228,11 @@ app.get(
 
       if (!channel) {
 
-        return res.status(400).send(
-          "Geen YouTube-kanaal gevonden."
-        );
+        return res
+          .status(400)
+          .send(
+            "Geen YouTube-kanaal gevonden."
+          );
 
       }
 
@@ -237,21 +248,27 @@ app.get(
           id: channel.id,
 
           title:
-            channel.snippet.title,
+            channel.snippet?.title ||
+            "YouTube Channel",
 
           thumbnail:
-            channel.snippet.thumbnails
-              ?.default?.url || ""
+            channel.snippet
+              ?.thumbnails
+              ?.default
+              ?.url || ""
 
         }
 
       };
 
 
-      res.redirect(
-        `${FRONTEND_URL}/?youtube=connected`
-      );
+      req.session.save(() => {
 
+        res.redirect(
+          `${FRONTEND_URL}/?youtube=connected`
+        );
+
+      });
 
     } catch (error) {
 
@@ -260,11 +277,12 @@ app.get(
         error
       );
 
-
-      res.status(500).send(
-        "YouTube verbinden mislukt: " +
-        error.message
-      );
+      res
+        .status(500)
+        .send(
+          "YouTube verbinden mislukt: " +
+          error.message
+        );
 
     }
 
@@ -282,7 +300,6 @@ app.get(
 
     const youtube =
       req.session.youtube;
-
 
     if (
       youtube &&
@@ -319,14 +336,18 @@ app.post(
   "/api/youtube/disconnect",
   (req, res) => {
 
-    req.session.youtube = null;
+    req.session.youtube =
+      null;
 
+    req.session.save(() => {
 
-    res.json({
+      res.json({
 
-      success: true,
+        success: true,
 
-      connected: false
+        connected: false
+
+      });
 
     });
 
@@ -335,7 +356,7 @@ app.post(
 
 
 /* =========================
-   TEST YOUTUBE CONFIG
+   CONFIG CHECK
 ========================= */
 
 app.get(
@@ -358,6 +379,9 @@ app.get(
         Boolean(
           process.env.SESSION_SECRET
         ),
+
+      frontendUrl:
+        FRONTEND_URL,
 
       redirectUri:
         REDIRECT_URI
